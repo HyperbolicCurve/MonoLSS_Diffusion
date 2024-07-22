@@ -1,8 +1,8 @@
 dataset:
   type: 'kitti'
-  data_dir: '/root/kitti'
+  data_dir: '/mnt/nodestor/MonoLSS/data/kitti'
   root_dir: '/'
-  label_dir: '/root/kitti/training/label_2'
+  label_dir: '/mnt/nodestor/MonoLSS/data/kitti/training/label_2'
   eval_cls: ['Car']
 #  eval_cls: ['Car','Pedestrian','Cyclist']
   batch_size: 16
@@ -33,7 +33,7 @@ lr_scheduler:
   decay_list: [240, 360, 480]
 
 trainer:
-  max_epoch: 600
+  max_epoch: 150
   eval_start: 10
   eval_frequency: 10 # evaluation interval (in epoch)
   save_frequency: 10 # checkpoint save interval (in epoch)
@@ -45,7 +45,7 @@ trainer:
 tester:
   threshold: 0.2  # confidence filter
   out_dir: './MonoLSS/testset_out'
-  resume_model: 'monolss.pth' # pre-trained model path
+  resume_model: 'model.pth' # pre-trained model path
 
 
 

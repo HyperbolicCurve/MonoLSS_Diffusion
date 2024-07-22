@@ -22,6 +22,7 @@ def save_checkpoint(state, filename, logger):
 
 
 def load_checkpoint(model, optimizer, filename, logger, map_location):
+    # filename = "/mnt/nodestor/MonoLSS/testset_out/model.pth"
     if os.path.isfile(filename):
         logger.info("==> Loading from checkpoint '{}'".format(filename))
         checkpoint = torch.load(filename, map_location=map_location)

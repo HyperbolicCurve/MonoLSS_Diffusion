@@ -12,8 +12,8 @@ from timm.models.layers import trunc_normal_
 from inspect import isfunction
 import torch.nn.functional as F
 from ldm.util import instantiate_from_config
-from utils.misc import NestedTensor
 from typing import Dict, List
+
 
 def exists(val):
     return val is not None
@@ -27,6 +27,7 @@ def default(val, d):
     if exists(val):
         return val
     return d() if isfunction(d) else d
+
 
 class VPDEncoder(nn.Module):
     def __init__(self,
@@ -42,7 +43,7 @@ class VPDEncoder(nn.Module):
                  use_attn=False):
         super().__init__()
         if return_interm_layers:
-            if use_attn==False:
+            if use_attn == False:
                 self.strides = [8, 16, 32]
                 self.num_channels = [320, 640, 2560]
             else:
@@ -109,7 +110,7 @@ class VPDEncoder(nn.Module):
     def forward(self, x, class_ids=None):
         with torch.no_grad():
             latents = self.encoder_vq.encode(x).mode().detach()
-        class_embeddings=[]
+        class_embeddings = []
         for class_embedding in self.class_embeddings:
             class_embeddings.append(class_embedding.to(latents.device))
 
@@ -126,14 +127,14 @@ class VPDEncoder(nn.Module):
         feats = [outs[0], outs[1], torch.cat([outs[2], F.interpolate(outs[3], scale_factor=2)], dim=1)]
         # feats_upsampled = [F.interpolate(feat, scale_factor=2) for feat in feats]
         # feats_original = [feat[:,:,feat.shape[2]//2-int(round(feat.shape[3]*384/1280/2)):feat.shape[2]//2+int(round(feat.shape[3]*384/1280/2)),:] for feat in feats_upsampled]
-        out = {}
-        for name, x in enumerate(feats):
-            m = torch.zeros(x.shape[0], x.shape[2], x.shape[3]).to(torch.bool).to(x.device)
-            out[f"{name}"] = NestedTensor(x, m)
-        #8 48*160 16 24*80 32 12*40
+        # out = {}
+        # for name, x in enumerate(feats):
+        #     m = torch.zeros(x.shape[0], x.shape[2], x.shape[3]).to(torch.bool).to(x.device)
+        #     out[f"{name}"] = NestedTensor(x, m)
+        # 8 48*160 16 24*80 32 12*40
         # x = torch.cat([self.layer1(feats[0]), self.layer2(feats[1]), feats[2]], dim=1)
         # out = self.out_layer(x)
-        return out
+        return feats
 
 
 class UNetWrapper(nn.Module):
@@ -168,7 +169,7 @@ class UNetWrapper(nn.Module):
         attns = {self.size16: [], self.size32: [], self.size64: []}
         for k in self.attn_selector:
             for up_attn in avg_attn[k]:
-                size = int(round(math.sqrt(up_attn.shape[1]*1280/384)))
+                size = int(round(math.sqrt(up_attn.shape[1] * 1280 / 384)))
                 attns[size].append(rearrange(up_attn, 'b (h w) c -> b c h w', w=size))
         attn16 = torch.stack(attns[self.size16]).mean(0)
         attn32 = torch.stack(attns[self.size32]).mean(0)

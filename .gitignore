@@ -1,2 +1,4 @@
 # ignore .idea
 .idea
+# ignore .xml file
+*.xml
