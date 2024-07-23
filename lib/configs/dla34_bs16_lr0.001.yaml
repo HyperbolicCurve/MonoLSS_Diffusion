@@ -6,7 +6,7 @@ dataset:
   eval_cls: ['Car']
 #  eval_cls: ['Car','Pedestrian','Cyclist']
   batch_size: 16
-  num_workers: 16
+  num_workers: 8
   class_merging: False
   use_dontcare: False
   use_3d_center: True
@@ -44,8 +44,8 @@ trainer:
 
 tester:
   threshold: 0.2  # confidence filter
-  out_dir: './MonoLSS/testset_out'
-  resume_model: 'model.pth' # pre-trained model path
+  out_dir: '/mnt/nodestor/MonoLSS/MonoLSS/logs/checkpoints/'
+  resume_model: 'checkpoint_epoch_210' # pre-trained model path
 
 
 

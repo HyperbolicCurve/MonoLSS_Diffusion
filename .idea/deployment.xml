@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="dkliang@218.200.126.238:39106 password" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
     <option name="confirmBeforeUploading" value="false" />
     <serverData>
       <paths name="dkliang@218.200.126.238:39106 password">
@@ -11,6 +11,7 @@
           </mappings>
           <excludedPaths>
             <excludedPath path="/mnt/nodestor/MonoLSS/data" />
+            <excludedPath path="/mnt/nodestor/MonoLSS/MonoLSS" />
           </excludedPaths>
         </serverdata>
       </paths>
@@ -113,5 +114,6 @@
         </serverdata>
       </paths>
     </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
   </component>
 </project>

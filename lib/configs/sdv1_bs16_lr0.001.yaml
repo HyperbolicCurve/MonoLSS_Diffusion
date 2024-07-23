@@ -5,8 +5,8 @@ dataset:
   label_dir: '/mnt/nodestor/MonoLSS/data/kitti/training/label_2'
   eval_cls: ['Car']
 #  eval_cls: ['Car','Pedestrian','Cyclist']
-  batch_size: 16
-  num_workers: 16
+  batch_size: 2
+  num_workers: 4
   class_merging: False
   use_dontcare: False
   use_3d_center: True
@@ -19,12 +19,12 @@ dataset:
 
 model:
   type: 'MonoLSS'
-  backbone: 'Stable_diffusionV1'
+  backbone: 'sdv1'
   neck: 'DLAUp'
 
 optimizer:
   type: 'adam'
-  lr: 0.001
+  lr: 0.00025
   weight_decay: 0.00001
 
 lr_scheduler:

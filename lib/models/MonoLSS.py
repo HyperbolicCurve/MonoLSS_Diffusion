@@ -35,83 +35,82 @@ class MonoLSS(nn.Module):
         assert downsample in [4, 8, 16, 32]
         super().__init__()
         # channels [16, 32, 64, 128, 256, 512]
-        if backbone == 'dla34':
+        if backbone == 'sdv1':
+            self.backbone = VPDEncoder(out_dim=1024,
+                                       train_backbone=True,
+                                       return_interm_layers=4,
+                                       class_embeddings_path='/mnt/nodestor/MDP/kitti_embeddings.pth',
+                                       sd_config_path='/mnt/nodestor/MDP/configs/v1_inference.yaml',
+                                       sd_checkpoint_path='/mnt/nodestor/MDP/v1-5-pruned-emaonly.ckpt',
+                                       use_attn=False)
+            self.fpn = FeatureFusion()
+        elif backbone == 'dla34':
             self.backbone = globals()[backbone](pretrained=True, return_levels=True)
             channels = self.backbone.channels
+            # scales = [1, 2, 4, 8] first_level = 2
+            self.first_level = int(np.log2(downsample))
             scales = [2 ** i for i in range(len(channels[self.first_level:]))]
             self.feat_up = globals()[neck](channels[self.first_level:], scales_list=scales)
-        elif backbone == 'sdv1':
-            self.backbone = VPDEncoder(out_dim=1024,
-                         train_backbone=True,
-                         return_interm_layers=4,
-                         class_embeddings_path='/mnt/nodestor/MDP/kitti_embeddings.pth',
-                         sd_config_path='/mnt/nodestor/MDP/configs/v1_inference.yaml',
-                         sd_checkpoint_path='/mnt/nodestor/MDP/v1-5-pruned-emaonly.ckpt',
-                         use_attn=False)
-
         self.head_conv = 256  # default setting for head conv
         self.mean_size = nn.Parameter(torch.tensor(mean_size, dtype=torch.float32), requires_grad=False)
         self.cls_num = mean_size.shape[0]
-
-
-        self.first_level = int(np.log2(downsample))
-
+        in_dim = channels[self.first_level] if backbone == 'dla34' else 640
         # initialize the head of pipeline, according to heads setting.
         self.heatmap = nn.Sequential(
-            nn.Conv2d(channels[self.first_level], self.head_conv, kernel_size=3, padding=1, bias=True),
+            nn.Conv2d(in_dim, self.head_conv, kernel_size=3, padding=1, bias=True),
             nn.ReLU(inplace=True),
             nn.Conv2d(self.head_conv, 3, kernel_size=1, stride=1, padding=0, bias=True))
         self.offset_2d = nn.Sequential(
-            nn.Conv2d(channels[self.first_level], self.head_conv, kernel_size=3, padding=1, bias=True),
+            nn.Conv2d(in_dim, self.head_conv, kernel_size=3, padding=1, bias=True),
             nn.ReLU(inplace=True),
             nn.Conv2d(self.head_conv, 2, kernel_size=1, stride=1, padding=0, bias=True))
         self.size_2d = nn.Sequential(
-            nn.Conv2d(channels[self.first_level], self.head_conv, kernel_size=3, padding=1, bias=True),
+            nn.Conv2d(in_dim, self.head_conv, kernel_size=3, padding=1, bias=True),
             nn.ReLU(inplace=True),
             nn.Conv2d(self.head_conv, 2, kernel_size=1, stride=1, padding=0, bias=True))
 
         self.offset_3d = nn.Sequential(
-            nn.Conv2d(channels[self.first_level] + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
+            nn.Conv2d(in_dim + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
                       bias=True),
             nn.BatchNorm2d(self.head_conv),
             nn.ReLU(inplace=True), nn.AdaptiveAvgPool2d(1),
             nn.Conv2d(self.head_conv, 2, kernel_size=1, stride=1, padding=0, bias=True))
         self.size_3d = nn.Sequential(
-            nn.Conv2d(channels[self.first_level] + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
+            nn.Conv2d(in_dim + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
                       bias=True),
             nn.BatchNorm2d(self.head_conv),
             nn.ReLU(inplace=True), nn.AdaptiveAvgPool2d(1),
             nn.Conv2d(self.head_conv, 3, kernel_size=1, stride=1, padding=0, bias=True))
         self.heading = nn.Sequential(
-            nn.Conv2d(channels[self.first_level] + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
+            nn.Conv2d(in_dim + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
                       bias=True),
             nn.BatchNorm2d(self.head_conv),
             nn.ReLU(inplace=True), nn.AdaptiveAvgPool2d(1),
             nn.Conv2d(self.head_conv, 24, kernel_size=1, stride=1, padding=0, bias=True))
 
         self.vis_depth = nn.Sequential(
-            nn.Conv2d(channels[self.first_level] + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
+            nn.Conv2d(in_dim + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
                       bias=True),
             nn.LeakyReLU(inplace=True),
             nn.Conv2d(self.head_conv, 1, kernel_size=1, stride=1, padding=0, bias=True))
         self.att_depth = nn.Sequential(
-            nn.Conv2d(channels[self.first_level] + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
+            nn.Conv2d(in_dim + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
                       bias=True),
             nn.LeakyReLU(inplace=True),
             nn.Conv2d(self.head_conv, 1, kernel_size=1, stride=1, padding=0, bias=True))
         self.vis_depth_uncer = nn.Sequential(
-            nn.Conv2d(channels[self.first_level] + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
+            nn.Conv2d(in_dim + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
                       bias=True),
             nn.LeakyReLU(inplace=True),
             nn.Conv2d(self.head_conv, 1, kernel_size=1, stride=1, padding=0, bias=True))
         self.att_depth_uncer = nn.Sequential(
-            nn.Conv2d(channels[self.first_level] + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
+            nn.Conv2d(in_dim + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
                       bias=True),
             nn.LeakyReLU(inplace=True),
             nn.Conv2d(self.head_conv, 1, kernel_size=1, stride=1, padding=0, bias=True))
 
         self.attention = nn.Sequential(
-            nn.Conv2d(channels[self.first_level] + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
+            nn.Conv2d(in_dim + 2 + self.cls_num, self.head_conv, kernel_size=3, padding=1,
                       bias=True),
             nn.LeakyReLU(inplace=True),
             nn.Conv2d(self.head_conv, 1, kernel_size=1, stride=1, padding=0, bias=True))
@@ -134,6 +133,11 @@ class MonoLSS(nn.Module):
     def forward(self, input, coord_ranges, calibs, targets=None, K=50, mode='train'):
         device_id = input.device
         feat = self.backbone(input)
+        """"
+        feat[0] = [b, 320, 48, 160]
+        feat[1] = [b, 640, 24, 80]
+        feat[2] = [b, 2560, 12, 40]
+        """
         feat = self.feat_up(feat[self.first_level:])
 
         '''
@@ -296,6 +300,35 @@ class MonoLSS(nn.Module):
                 nn.init.normal_(m.weight, std=0.001)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
+
+class FeatureFusion(nn.Module):
+    def __init__(self):
+        super(FeatureFusion, self).__init__()
+        self.conv1 = nn.Conv2d(320, 640, kernel_size=1)
+        self.conv2 = nn.Conv2d(2560, 640, kernel_size=1)
+
+    def forward(self, feat):
+        feat0 = feat[0]  # [b, 320, 48, 160]
+        feat1 = feat[1]  # [b, 640, 24, 80]
+        feat2 = feat[2]  # [b, 2560, 12, 40]
+
+        # Upsample feat0 to [b, 320, 96, 320]
+        feat0 = F.interpolate(feat0, size=(96, 320), mode='bilinear', align_corners=False)
+        # Convert channels to 640
+        feat0 = self.conv1(feat0)
+
+        # Upsample feat1 to [b, 640, 96, 320]
+        feat1 = F.interpolate(feat1, size=(96, 320), mode='bilinear', align_corners=False)
+
+        # Upsample feat2 to [b, 2560, 96, 320]
+        feat2 = F.interpolate(feat2, size=(96, 320), mode='bilinear', align_corners=False)
+        # Convert channels to 640
+        feat2 = self.conv2(feat2)
+
+        # Fusion
+        out = feat0 + feat1 + feat2
+
+        return out
 
 
 if __name__ == '__main__':
