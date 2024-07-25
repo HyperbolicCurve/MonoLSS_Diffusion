@@ -11,7 +11,7 @@ from lib.helpers.save_helper import load_checkpoint
 from lib.losses.loss_function import LSS_Loss, Hierarchical_Task_Learning
 from lib.helpers.decode_helper import extract_dets_from_outputs
 from lib.helpers.decode_helper import decode_detections
-
+import tqdm
 from tools import eval
 
 
@@ -52,7 +52,9 @@ class Trainer(object):
         start_epoch = self.epoch
         ei_loss = self.compute_e0_loss()
         loss_weightor = Hierarchical_Task_Learning(ei_loss)
-        for epoch in range(start_epoch, self.cfg_train['max_epoch']):
+        print("Trained Parameters: ", sum(p.numel() for p in self.model.parameters() if p.requires_grad))
+        print("Total Parameters: ", sum(p.numel() for p in self.model.parameters()))
+        for epoch in tqdm(range(start_epoch, self.cfg_train['max_epoch']), desc="Training Epochs"):
             # train one epoch
             self.logger.info('------ TRAIN EPOCH %03d ------' % (epoch + 1))
             if self.warmup_lr_scheduler is not None and epoch < 5:
@@ -142,7 +144,6 @@ class Trainer(object):
             self.optimizer.zero_grad()
             criterion = LSS_Loss(self.epoch)
             outputs = self.model(inputs, coord_ranges, calibs, targets)
-
             total_loss, loss_terms = criterion(outputs, targets)
 
             if loss_weights is not None:
