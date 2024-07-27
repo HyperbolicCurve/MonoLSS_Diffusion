@@ -11,7 +11,7 @@ from lib.helpers.save_helper import load_checkpoint
 from lib.losses.loss_function import LSS_Loss, Hierarchical_Task_Learning
 from lib.helpers.decode_helper import extract_dets_from_outputs
 from lib.helpers.decode_helper import decode_detections
-import tqdm
+from tqdm import tqdm
 from tools import eval
 
 
@@ -52,8 +52,9 @@ class Trainer(object):
         start_epoch = self.epoch
         ei_loss = self.compute_e0_loss()
         loss_weightor = Hierarchical_Task_Learning(ei_loss)
-        print("Trained Parameters: ", sum(p.numel() for p in self.model.parameters() if p.requires_grad))
-        print("Total Parameters: ", sum(p.numel() for p in self.model.parameters()))
+        print("Epochs: ", self.cfg_train['max_epoch'])
+        print("Trained Parameters(M): ", sum(p.numel() for p in self.model.parameters() if p.requires_grad) / 1e6)
+        print("Total Parameters(M): ", sum(p.numel() for p in self.model.parameters()) / 1e6)
         for epoch in tqdm(range(start_epoch, self.cfg_train['max_epoch']), desc="Training Epochs"):
             # train one epoch
             self.logger.info('------ TRAIN EPOCH %03d ------' % (epoch + 1))
@@ -81,9 +82,9 @@ class Trainer(object):
             else:
                 self.lr_scheduler.step()
 
-            if ((self.epoch % self.cfg_train['eval_frequency']) == 0 and \
+            if ((self.epoch % self.cfg_train['eval_frequency']) == 0 and
                     self.epoch >= self.cfg_train['eval_start']):
-                self.logger.info('------ EVAL EPOCH %03d ------' % (self.epoch))
+                self.logger.info('------ EVAL EPOCH %03d ------' % self.epoch)
                 Car_res = self.eval_one_epoch()
                 self.logger.info(str(Car_res))
 
@@ -98,7 +99,7 @@ class Trainer(object):
     def compute_e0_loss(self):
         self.model.train()
         disp_dict = {}
-        progress_bar = tqdm.tqdm(total=len(self.train_loader), leave=True, desc='pre-training loss stat')
+        progress_bar = tqdm(total=len(self.train_loader), leave=True, desc='pre-training loss stat')
         with torch.no_grad():
             for batch_idx, (inputs, calibs, coord_ranges, targets, info) in enumerate(self.train_loader):
                 if type(inputs) != dict:
@@ -191,7 +192,7 @@ class Trainer(object):
 
         results = {}
         disp_dict = {}
-        progress_bar = tqdm.tqdm(total=len(self.test_loader), leave=True, desc='Evaluation Progress')
+        progress_bar = tqdm(total=len(self.test_loader), leave=True, desc='Evaluation Progress')
         with torch.no_grad():
             for batch_idx, (inputs, calibs, coord_ranges, _, info) in enumerate(self.test_loader):
                 # load evaluation data and move data to current device.

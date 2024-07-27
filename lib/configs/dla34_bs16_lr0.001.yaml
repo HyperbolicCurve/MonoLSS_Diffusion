@@ -10,7 +10,8 @@ dataset:
   class_merging: False
   use_dontcare: False
   use_3d_center: True
-  writelist: ['Car','Pedestrian','Cyclist']
+#  writelist: ['Car','Pedestrian','Cyclist']
+  writelist: ['Car']
   random_flip: 0.5
   random_crop: 0.5
   scale: 0.4
@@ -45,7 +46,7 @@ trainer:
 tester:
   threshold: 0.2  # confidence filter
   out_dir: '/mnt/nodestor/MonoLSS/testset_out'
-  resume_model: 'model.pth' # pre-trained model path
+  resume_model: '/mnt/nodestor/MonoLSS/testset_out/model.pth' # pre-trained model path
 
 
 

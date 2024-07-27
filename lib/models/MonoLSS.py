@@ -8,7 +8,7 @@ from lib.backbones.dla import dla34
 from lib.backbones.dlaup import DLAUp
 from lib.backbones.dlaup import DLAUpv2
 from lib.backbones.sd_encoder import VPDEncoder
-
+from lib.backbones.sdv3_encoder import SDV3Encoder
 import torchvision.ops.roi_align as roi_align
 from lib.losses.loss_function import extract_input_from_tensor
 from lib.helpers.decode_helper import _topk, _nms
@@ -34,6 +34,7 @@ class MonoLSS(nn.Module):
     def __init__(self, backbone='dla34', neck='DLAUp', downsample=4, mean_size=None):
         assert downsample in [4, 8, 16, 32]
         super().__init__()
+        self.backbone_name = backbone
         # channels [16, 32, 64, 128, 256, 512]
         if backbone == 'sdv1':
             self.backbone = VPDEncoder(out_dim=1024,
@@ -51,10 +52,13 @@ class MonoLSS(nn.Module):
             self.first_level = int(np.log2(downsample))
             scales = [2 ** i for i in range(len(channels[self.first_level:]))]
             self.feat_up = globals()[neck](channels[self.first_level:], scales_list=scales)
+        elif backbone == 'sdv3':
+            self.backbone = SDV3Encoder(class_embeddings_path='/mnt/nodestor/MDP/kitti_embeddings.pth')
+
         self.head_conv = 256  # default setting for head conv
         self.mean_size = nn.Parameter(torch.tensor(mean_size, dtype=torch.float32), requires_grad=False)
         self.cls_num = mean_size.shape[0]
-        in_dim = channels[self.first_level] if backbone == 'dla34' else 640
+        in_dim = channels[self.first_level] if backbone == 'dla34' else 64
         # initialize the head of pipeline, according to heads setting.
         self.heatmap = nn.Sequential(
             nn.Conv2d(in_dim, self.head_conv, kernel_size=3, padding=1, bias=True),
@@ -138,8 +142,10 @@ class MonoLSS(nn.Module):
         feat[1] = [b, 640, 24, 80]
         feat[2] = [b, 2560, 12, 40]
         """
-        feat = self.feat_up(feat[self.first_level:])
-
+        if self.backbone_name == 'sdv1':
+            feat = self.fpn(feat)
+        elif self.backbone_name == 'dla34':
+            feat = self.feat_up(feat[self.first_level:])
         '''
         feat [b, 64, 96, 320] (4x)
         '''
@@ -301,44 +307,32 @@ class MonoLSS(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
+
 class FeatureFusion(nn.Module):
     def __init__(self):
         super(FeatureFusion, self).__init__()
-        self.conv1 = nn.Conv2d(320, 640, kernel_size=1)
-        self.conv2 = nn.Conv2d(2560, 640, kernel_size=1)
+        # 1*1 conv, channels: 320->64
+        self.conv0 = nn.Conv2d(320, 64, kernel_size=1, stride=1, padding=0)
+        self.bn0 = nn.BatchNorm2d(64)  # 添加Batch Normalization
+        # upsampling 48x160->96x320
+        self.upsample = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2, padding=0)
 
     def forward(self, feat):
         feat0 = feat[0]  # [b, 320, 48, 160]
-        feat1 = feat[1]  # [b, 640, 24, 80]
-        feat2 = feat[2]  # [b, 2560, 12, 40]
-
-        # Upsample feat0 to [b, 320, 96, 320]
-        feat0 = F.interpolate(feat0, size=(96, 320), mode='bilinear', align_corners=False)
-        # Convert channels to 640
-        feat0 = self.conv1(feat0)
-
-        # Upsample feat1 to [b, 640, 96, 320]
-        feat1 = F.interpolate(feat1, size=(96, 320), mode='bilinear', align_corners=False)
-
-        # Upsample feat2 to [b, 2560, 96, 320]
-        feat2 = F.interpolate(feat2, size=(96, 320), mode='bilinear', align_corners=False)
-        # Convert channels to 640
-        feat2 = self.conv2(feat2)
-
-        # Fusion
-        out = feat0 + feat1 + feat2
-
-        return out
+        x = self.conv0(feat0)
+        x = self.bn0(x)
+        x = self.upsample(x)
+        return x
 
 
-if __name__ == '__main__':
-    import torch
-
-    net = MonoLSS(backbone='dla34', neck='DLAUp', downsample=4,
-                  mean_size=torch.tensor([[1.6, 1.6, 3.9], [1.6, 1.6, 3.9], [1.6, 1.6, 3.9], [1.6, 1.6, 3.9]]))
-    print(net)
-    input = torch.randn(4, 3, 384, 1280)
-    coord_ranges = torch.tensor([[[0, 0], [1280, 384]]]).float()
-    calibs = torch.randn(4, 3, 4)
-    print(input.shape, input.dtype)
-    output = net(input, coord_ranges, calibs)
+# if __name__ == '__main__':
+#     import torch
+#
+#     net = MonoLSS(backbone='dla34', neck='DLAUp', downsample=4,
+#                   mean_size=torch.tensor([[1.6, 1.6, 3.9], [1.6, 1.6, 3.9], [1.6, 1.6, 3.9], [1.6, 1.6, 3.9]]))
+#     print(net)
+#     input = torch.randn(4, 3, 384, 1280)
+#     coord_ranges = torch.tensor([[[0, 0], [1280, 384]]]).float()
+#     calibs = torch.randn(4, 3, 4)
+#     print(input.shape, input.dtype)
+#     output = net(input, coord_ranges, calibs)

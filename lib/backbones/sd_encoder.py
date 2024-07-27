@@ -79,7 +79,7 @@ class VPDEncoder(nn.Module):
 
         sd_model = instantiate_from_config(config.model)
         self.encoder_vq = sd_model.first_stage_model
-
+        # self.encoder_vq = torch.compile(encoder_vq, mode='max-autotune', fullgraph=True)
         self.unet = UNetWrapper(sd_model.model, use_attn=use_attn)
 
         del sd_model.cond_stage_model

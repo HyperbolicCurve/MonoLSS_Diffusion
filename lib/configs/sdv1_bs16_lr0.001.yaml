@@ -5,12 +5,13 @@ dataset:
   label_dir: '/mnt/nodestor/MonoLSS/data/kitti/training/label_2'
   eval_cls: ['Car']
 #  eval_cls: ['Car','Pedestrian','Cyclist']
-  batch_size: 2
-  num_workers: 4
+  batch_size: 16
+  num_workers: 8
   class_merging: False
   use_dontcare: False
   use_3d_center: True
-  writelist: ['Car','Pedestrian','Cyclist']
+#  writelist: ['Car','Pedestrian','Cyclist']
+  writelist: ['Car']
   random_flip: 0.5
   random_crop: 0.5
   scale: 0.4
@@ -24,7 +25,7 @@ model:
 
 optimizer:
   type: 'adam'
-  lr: 0.00025
+  lr: 0.001
   weight_decay: 0.00001
 
 lr_scheduler:
@@ -45,7 +46,7 @@ trainer:
 tester:
   threshold: 0.2  # confidence filter
   out_dir: '/mnt/nodestor/MonoLSS/testset_out/'
-  resume_model: 'model.pth' # pre-trained model path
+  resume_model:  # pre-trained model path
 
 
 

@@ -12,7 +12,7 @@ from tools import eval
 from lib.helpers.save_helper import load_checkpoint
 from lib.helpers.decode_helper import extract_dets_from_outputs
 from lib.helpers.decode_helper import decode_detections
-
+from tqdm import tqdm
 
 class Tester(object):
     def __init__(self, cfg_tester, cfg_dataset, model, data_loader, logger):
@@ -39,7 +39,7 @@ class Tester(object):
         self.model.eval()
 
         results = {}
-        progress_bar = tqdm.tqdm(total=len(self.data_loader), leave=True, desc='Evaluation Progress')
+        progress_bar = tqdm(total=len(self.data_loader), leave=True, desc='Evaluation Progress')
         for batch_idx, (inputs, calibs, coord_ranges, _, info) in enumerate(self.data_loader):
             # load evaluation data and move data to current device.
             if type(inputs) != dict:

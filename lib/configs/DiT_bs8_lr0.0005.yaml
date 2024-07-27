@@ -5,12 +5,13 @@ dataset:
   label_dir: '/mnt/nodestor/MonoLSS/data/kitti/training/label_2'
   eval_cls: ['Car']
 #  eval_cls: ['Car','Pedestrian','Cyclist']
-  batch_size: 16
-  num_workers: 16
+  batch_size: 8
+  num_workers: 8
   class_merging: False
   use_dontcare: False
   use_3d_center: True
-  writelist: ['Car','Pedestrian','Cyclist']
+ # writelist: ['Car','Pedestrian','Cyclist']
+  writelist: ['Car']
   random_flip: 0.5
   random_crop: 0.5
   scale: 0.4
@@ -19,12 +20,12 @@ dataset:
 
 model:
   type: 'MonoLSS'
-  backbone: 'DiT'
+  backbone: 'sdv3'
   neck: 'DLAUp'
 
 optimizer:
   type: 'adam'
-  lr: 0.001
+  lr: 0.0005
   weight_decay: 0.00001
 
 lr_scheduler:
