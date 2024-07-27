@@ -54,6 +54,7 @@ class MonoLSS(nn.Module):
             self.feat_up = globals()[neck](channels[self.first_level:], scales_list=scales)
         elif backbone == 'sdv3':
             self.backbone = SDV3Encoder(class_embeddings_path='/mnt/nodestor/MDP/kitti_embeddings.pth')
+            self.fpn = FeatureFusion(in_channels=16)
 
         self.head_conv = 256  # default setting for head conv
         self.mean_size = nn.Parameter(torch.tensor(mean_size, dtype=torch.float32), requires_grad=False)
@@ -133,6 +134,7 @@ class MonoLSS(nn.Module):
         self.att_depth_uncer.apply(weights_init_xavier)
 
         self.attention.apply(weights_init_xavier)
+        self.attention.apply(weights_init_xavier)
 
     def forward(self, input, coord_ranges, calibs, targets=None, K=50, mode='train'):
         device_id = input.device
@@ -143,9 +145,11 @@ class MonoLSS(nn.Module):
         feat[2] = [b, 2560, 12, 40]
         """
         if self.backbone_name == 'sdv1':
-            feat = self.fpn(feat)
+            feat = self.fpn(feat[0])
         elif self.backbone_name == 'dla34':
             feat = self.feat_up(feat[self.first_level:])
+        elif self.backbone_name == 'sdv3':
+            feat = self.fpn(feat.sample)
         '''
         feat [b, 64, 96, 320] (4x)
         '''
@@ -309,16 +313,16 @@ class MonoLSS(nn.Module):
 
 
 class FeatureFusion(nn.Module):
-    def __init__(self):
+    def __init__(self, in_channels=320):
         super(FeatureFusion, self).__init__()
         # 1*1 conv, channels: 320->64
-        self.conv0 = nn.Conv2d(320, 64, kernel_size=1, stride=1, padding=0)
+        self.conv0 = nn.Conv2d(in_channels, 64, kernel_size=1, stride=1, padding=0)
         self.bn0 = nn.BatchNorm2d(64)  # 添加Batch Normalization
         # upsampling 48x160->96x320
         self.upsample = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2, padding=0)
 
     def forward(self, feat):
-        feat0 = feat[0]  # [b, 320, 48, 160]
+        feat0 = feat  # [b, 320, 48, 160]
         x = self.conv0(feat0)
         x = self.bn0(x)
         x = self.upsample(x)

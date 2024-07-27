@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 from diffusers import SD3Transformer2DModel, StableDiffusion3Pipeline
@@ -20,9 +21,11 @@ class SDV3Encoder(nn.Module):
         pipe.transformer.to(memory_format=torch.channels_last)
         pipe.vae.to(memory_format=torch.channels_last)
         self.vae = pipe.vae
+        self.vae.requires_grad_(False)  # freeze the weights of the VAE
         del pipe.vae.decoder
         self.transformer = pipe.transformer
-        self.class_embedding = torch.load(class_embeddings_path)
+        self.class_embedding = torch.load('/mnt/nodestor/MonoLSS/prompt_embeds.pth')
+        self.pooled_projection = torch.load('/mnt/nodestor/MonoLSS/pooled_prompt_embeds.pth')
         self.text_adapter = TextAdapterDepth(text_dim=768)
         self.gamma = nn.Parameter(torch.ones(768) * 1e-4)
 
@@ -30,14 +33,14 @@ class SDV3Encoder(nn.Module):
         with torch.no_grad():
             latents = self.vae.encode(x, return_dict=False)[0].mode().detach()
 
-        c_crossattn = self.text_adapter(latents, self.class_embedding, self.gamma)
-        c_crossattn = c_crossattn.repeat(x.shape[0], 1, 1)
-
         # timestep embedding
         t = torch.ones((x.shape[0]), device=x.device).long()
+        # 0初始化pooled_projection,torch.float32
+        pooled_projection = torch.zeros((x.shape[0], 384), device=x.device).float()
 
         # finetune the backbone
-        feats = self.transformer(hidden_states=latents, encoder_hidden_states=c_crossattn, timestep=t)
+        feats = self.transformer(hidden_states=latents, encoder_hidden_states=self.class_embedding, timestep=t,
+                                 pooled_projections=self.pooled_projection)
         return feats
 
 
@@ -64,10 +67,20 @@ class TextAdapterDepth(nn.Module):
         return texts
 
 
-# main, for test purposes
-if __name__ == '__main__':
-    model = SDV3Encoder(class_embeddings_path='/mnt/nodestor/MDP/kitti_embeddings.pth')
-    model.to('cuda')
-    x = torch.randn(1, 3, 224, 224).to('cuda')
-    print(model)
-    print(model(x).shape)
+class DiTWrapper(nn.Module):
+    def __init__(self, DiT) -> None:
+        super().__init__()
+        self.diffusion_transformer = DiT
+
+    def forward(self, *args, **kwargs):
+        out = self.diffusion_transformer(*args, **kwargs).sample
+        return out
+
+
+# # main, for test purposes
+# if __name__ == '__main__':
+#     model = SDV3Encoder(class_embeddings_path='/mnt/nodestor/MDP/kitti_embeddings.pth')
+#     model.to('cuda')
+#     x = torch.randn(1, 3, 224, 224).to('cuda')
+#     print(model)
+#     print(model(x).shape)
