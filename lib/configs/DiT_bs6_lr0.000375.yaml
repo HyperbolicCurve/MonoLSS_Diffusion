@@ -5,7 +5,7 @@ dataset:
   label_dir: '/mnt/nodestor/MonoLSS/data/kitti/training/label_2'
   eval_cls: ['Car']
 #  eval_cls: ['Car','Pedestrian','Cyclist']
-  batch_size: 8
+  batch_size: 6
   num_workers: 8
   class_merging: False
   use_dontcare: False
@@ -25,7 +25,7 @@ model:
 
 optimizer:
   type: 'adam'
-  lr: 0.0005
+  lr: 0.000375
   weight_decay: 0.00001
 
 lr_scheduler:
@@ -34,7 +34,7 @@ lr_scheduler:
   decay_list: [240, 360, 480]
 
 trainer:
-  max_epoch: 600
+  max_epoch: 150
   eval_start: 10
   eval_frequency: 10 # evaluation interval (in epoch)
   save_frequency: 10 # checkpoint save interval (in epoch)

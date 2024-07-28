@@ -40,7 +40,7 @@ class SDV3Encoder(nn.Module):
 
         # finetune the backbone
         feats = self.transformer(hidden_states=latents, encoder_hidden_states=self.class_embedding, timestep=t,
-                                 pooled_projections=self.pooled_projection)
+                                 pooled_projections=self.pooled_projection, return_dict=False)
         return feats
 
 
