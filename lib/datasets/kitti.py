@@ -63,6 +63,7 @@ class KITTI(data.Dataset):
         
         # data augmentation configuration
         self.data_augmentation = True if split in ['train', 'trainval'] else False
+        self.mixup_3d = cfg['mixup_3d']
         self.random_flip = cfg['random_flip']
         self.random_crop = cfg['random_crop']
         self.scale = cfg['scale']
@@ -112,8 +113,8 @@ class KITTI(data.Dataset):
         calib = self.get_calib(index)
 
         if self.data_augmentation:
-            # if np.random.random() < 0.5:
-            #     random_mix_flag = True
+            if np.random.random() < 0.5 and self.mixup_3d:
+                random_mix_flag = True
                 
             if np.random.random() < self.random_flip:
                 random_flip_flag = True

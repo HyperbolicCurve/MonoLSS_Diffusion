@@ -35,8 +35,6 @@ class SDV3Encoder(nn.Module):
 
         # timestep embedding
         t = torch.ones((x.shape[0]), device=x.device).long()
-        # 0初始化pooled_projection,torch.float32
-        pooled_projection = torch.zeros((x.shape[0], 384), device=x.device).float()
 
         # finetune the backbone
         feats = self.transformer(hidden_states=latents, encoder_hidden_states=self.class_embedding, timestep=t,
@@ -76,11 +74,3 @@ class DiTWrapper(nn.Module):
         out = self.diffusion_transformer(*args, **kwargs).sample
         return out
 
-
-# # main, for test purposes
-# if __name__ == '__main__':
-#     model = SDV3Encoder(class_embeddings_path='/mnt/nodestor/MDP/kitti_embeddings.pth')
-#     model.to('cuda')
-#     x = torch.randn(1, 3, 224, 224).to('cuda')
-#     print(model)
-#     print(model(x).shape)

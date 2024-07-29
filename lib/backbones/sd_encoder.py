@@ -33,7 +33,6 @@ class VPDEncoder(nn.Module):
     def __init__(self,
                  out_dim=1024,
                  ldm_prior=[320, 640, 1280 + 1280],
-                 sd_path=None,
                  text_dim=768,
                  train_backbone=False,
                  return_interm_layers=True,
@@ -71,15 +70,11 @@ class VPDEncoder(nn.Module):
         )
 
         self.apply(self._init_weights)
-
-        ### stable diffusion layers
-
         config = OmegaConf.load(sd_config_path)
         config.model.params.ckpt_path = sd_checkpoint_path
 
         sd_model = instantiate_from_config(config.model)
         self.encoder_vq = sd_model.first_stage_model
-        # self.encoder_vq = torch.compile(encoder_vq, mode='max-autotune', fullgraph=True)
         self.unet = UNetWrapper(sd_model.model, use_attn=use_attn)
 
         del sd_model.cond_stage_model
@@ -115,7 +110,7 @@ class VPDEncoder(nn.Module):
             class_embeddings.append(class_embedding.to(latents.device))
 
         c_crossattn = self.text_adapter(latents, class_embeddings,
-                                        self.gamma)  # NOTE: here the c_crossattn should be expand_dim as latents
+                                        self.gamma)
         c_crossattn = c_crossattn.repeat(x.shape[0], 1, 1)
         t = torch.ones((x.shape[0],), device=x.device).long()
         # import pdb; pdb.set_trace()
@@ -125,15 +120,6 @@ class VPDEncoder(nn.Module):
             with torch.no_grad():
                 outs = self.unet(latents, t, c_crossattn=[c_crossattn])
         feats = [outs[0], outs[1], torch.cat([outs[2], F.interpolate(outs[3], scale_factor=2)], dim=1)]
-        # feats_upsampled = [F.interpolate(feat, scale_factor=2) for feat in feats]
-        # feats_original = [feat[:,:,feat.shape[2]//2-int(round(feat.shape[3]*384/1280/2)):feat.shape[2]//2+int(round(feat.shape[3]*384/1280/2)),:] for feat in feats_upsampled]
-        # out = {}
-        # for name, x in enumerate(feats):
-        #     m = torch.zeros(x.shape[0], x.shape[2], x.shape[3]).to(torch.bool).to(x.device)
-        #     out[f"{name}"] = NestedTensor(x, m)
-        # 8 48*160 16 24*80 32 12*40
-        # x = torch.cat([self.layer1(feats[0]), self.layer2(feats[1]), feats[2]], dim=1)
-        # out = self.out_layer(x)
         return feats
 
 
