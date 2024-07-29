@@ -8,7 +8,7 @@ from ldm.modules.diffusionmodules.util import timestep_embedding
 
 
 class SDV3Encoder(nn.Module):
-    def __init__(self, class_embeddings_path: None):
+    def __init__(self, class_embedding_path, pooled_projection_path):
         super(SDV3Encoder, self).__init__()
         torch.set_float32_matmul_precision("high")
         torch._inductor.config.conv_1x1_as_mm = True
@@ -24,9 +24,8 @@ class SDV3Encoder(nn.Module):
         self.vae.requires_grad_(False)  # freeze the weights of the VAE
         del pipe.vae.decoder
         self.transformer = pipe.transformer
-        self.class_embedding = torch.load('/mnt/nodestor/MonoLSS/prompt_embeds.pth')
-        self.pooled_projection = torch.load('/mnt/nodestor/MonoLSS/pooled_prompt_embeds.pth')
-        self.text_adapter = TextAdapterDepth(text_dim=768)
+        self.class_embedding = torch.load(class_embedding_path)
+        self.pooled_projection = torch.load(pooled_projection_path)
         self.gamma = nn.Parameter(torch.ones(768) * 1e-4)
 
     def forward(self, x):
@@ -40,37 +39,4 @@ class SDV3Encoder(nn.Module):
         feats = self.transformer(hidden_states=latents, encoder_hidden_states=self.class_embedding, timestep=t,
                                  pooled_projections=self.pooled_projection, return_dict=False)
         return feats
-
-
-class TextAdapterDepth(nn.Module):
-    def __init__(self, text_dim=768):
-        super().__init__()
-
-        self.fc = nn.Sequential(
-            nn.Linear(text_dim, text_dim),
-            nn.GELU(),
-            nn.Linear(text_dim, text_dim)
-        )
-
-    def forward(self, latents, texts, gamma):
-        # use the gamma to blend
-        gamma = gamma.to(latents.device)
-        texts = texts[0].unsqueeze(0)
-        n_sen, channel = texts.shape
-        bs = latents.shape[0]
-
-        texts_after = self.fc(texts)
-        texts = texts + gamma * texts_after
-        texts = repeat(texts, 'n c -> n b c', b=1)
-        return texts
-
-
-class DiTWrapper(nn.Module):
-    def __init__(self, DiT) -> None:
-        super().__init__()
-        self.diffusion_transformer = DiT
-
-    def forward(self, *args, **kwargs):
-        out = self.diffusion_transformer(*args, **kwargs).sample
-        return out
 

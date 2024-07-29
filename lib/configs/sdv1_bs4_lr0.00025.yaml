@@ -22,7 +22,9 @@ dataset:
 model:
   type: 'MonoLSS'
   backbone: 'sdv1'
-  neck: 'DLAUp'
+  class_embeddings_path: '/mnt/nodestor/MDP/kitti_embeddings.pth'
+  sd_config_path: '/mnt/nodestor/MDP/configs/v1_inference.yaml'
+  sd_checkpoint_path: '/mnt/nodestor/MDP/v1-5-pruned-emaonly.ckpt'
 
 optimizer:
   type: 'adam'

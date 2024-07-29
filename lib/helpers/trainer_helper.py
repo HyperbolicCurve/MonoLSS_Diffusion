@@ -1,7 +1,5 @@
 import os
 import torch
-import torch.nn as nn
-import torch.distributed as dist
 import numpy as np
 from lib.helpers.save_helper import get_checkpoint_state, save_checkpoint, load_checkpoint
 from lib.losses.loss_function import LSS_Loss, Hierarchical_Task_Learning
@@ -135,6 +133,7 @@ class Trainer(object):
         disp_dict = {}
         stat_dict = {}
         for batch_idx, (inputs, calibs, coord_ranges, targets, info) in enumerate(self.train_loader):
+            self.train_loader.sampler.set_epoch(batch_idx)
             if type(inputs) != dict:
                 inputs = inputs.to(self.device)
             else:
@@ -165,6 +164,7 @@ class Trainer(object):
                     stat_dict[key] += (loss_terms[key])
                 else:
                     stat_dict[key] += (loss_terms[key]).detach()
+
             for key in loss_terms.keys():
                 if key not in disp_dict.keys():
                     disp_dict[key] = 0

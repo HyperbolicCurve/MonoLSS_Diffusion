@@ -39,6 +39,7 @@ def create_logger(log_file):
 
 
 def main():
+    print(f"Local rank: {local_rank}")
     torch.cuda.set_device(local_rank)
     dist.init_process_group(backend='nccl')
     device = torch.device("cuda", local_rank)
@@ -52,7 +53,7 @@ def main():
     cfg['dataset']['batch_size'] = per_process_batch_size
 
     base_learning_rate = cfg['optimizer']['lr']
-    adjusted_learning_rate = base_learning_rate * (batch_size / 32)
+    adjusted_learning_rate = base_learning_rate * (per_process_batch_size / batch_size)
     cfg['optimizer']['lr'] = adjusted_learning_rate
 
     os.makedirs(cfg['trainer']['log_dir'], exist_ok=True)

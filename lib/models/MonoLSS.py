@@ -31,7 +31,7 @@ def weights_init_xavier(m):
 
 
 class MonoLSS(nn.Module):
-    def __init__(self, backbone='dla34', neck='DLAUp', downsample=4, mean_size=None):
+    def __init__(self, config, backbone='dla34', downsample=4, mean_size=None):
         assert downsample in [4, 8, 16, 32]
         super().__init__()
         self.backbone_name = backbone
@@ -40,12 +40,13 @@ class MonoLSS(nn.Module):
             self.backbone = VPDEncoder(out_dim=1024,
                                        train_backbone=True,
                                        return_interm_layers=4,
-                                       class_embeddings_path='/mnt/nodestor/MDP/kitti_embeddings.pth',
-                                       sd_config_path='/mnt/nodestor/MDP/configs/v1_inference.yaml',
-                                       sd_checkpoint_path='/mnt/nodestor/MDP/v1-5-pruned-emaonly.ckpt',
+                                       class_embeddings_path=config['class_embeddings_path'],
+                                       sd_config_path=config['sd_config_path'],
+                                       sd_checkpoint_path=config['sd_checkpoint_path'],
                                        use_attn=False)
             self.fpn = FeatureFusion()
         elif backbone == 'dla34':
+            neck = config['neck']
             self.backbone = globals()[backbone](pretrained=True, return_levels=True)
             channels = self.backbone.channels
             # scales = [1, 2, 4, 8] first_level = 2
@@ -53,7 +54,8 @@ class MonoLSS(nn.Module):
             scales = [2 ** i for i in range(len(channels[self.first_level:]))]
             self.feat_up = globals()[neck](channels[self.first_level:], scales_list=scales)
         elif backbone == 'sdv3':
-            self.backbone = SDV3Encoder(class_embeddings_path='/mnt/nodestor/MDP/kitti_embeddings.pth')
+            self.backbone = SDV3Encoder(class_embedding_path=config['class_embedding_path'],
+                                        pooled_projection_path=config['pooled_projection_path'])
             self.fpn = FeatureFusion(in_channels=16)
 
         self.head_conv = 256  # default setting for head conv

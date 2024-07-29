@@ -1,18 +1,19 @@
 import numpy as np
 from torch.utils.data import DataLoader
 from lib.datasets.kitti import KITTI
-
+import torch
 
 def build_dataloader(cfg):
     # --------------  build kitti dataset ----------------
     if cfg['type'] == 'kitti':
         train_set = KITTI(root_dir=cfg['root_dir'], split='train', cfg=cfg)
+        train_sampler = torch.utils.data.distributed.DistributedSampler(train_set)
         train_loader = DataLoader(dataset=train_set,
                                   batch_size=cfg['batch_size'],
                                   num_workers=cfg['num_workers'],
-                                  shuffle=True,
                                   pin_memory=True,
-                                  drop_last=True)
+                                  drop_last=True,
+                                  sampler=train_sampler)
         val_set = KITTI(root_dir=cfg['root_dir'], split='val', cfg=cfg)
         val_loader = DataLoader(dataset=val_set,
                                 batch_size=cfg['batch_size'],

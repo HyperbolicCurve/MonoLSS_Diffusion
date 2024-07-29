@@ -22,7 +22,8 @@ dataset:
 model:
   type: 'MonoLSS'
   backbone: 'sdv3'
-  neck: 'DLAUp'
+  class_embeddings_path: '/mnt/nodestor/MonoLSS/prompt_embeds.pth'
+  pooled_projection_path: '/mnt/nodestor/MonoLSS/pooled_prompt_embeds.pth'
 
 optimizer:
   type: 'adam'
