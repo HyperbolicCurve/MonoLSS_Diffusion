@@ -149,7 +149,7 @@ class MonoLSS(nn.Module):
         elif self.backbone_name == 'dla34':
             feat = self.feat_up(feat[self.first_level:])
         elif self.backbone_name == 'sdv3':
-            feat = self.fpn(feat.sample)
+            feat = self.fpn(feat[0])
         '''
         feat [b, 64, 96, 320] (4x)
         '''

@@ -57,6 +57,13 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="xkzhu@222.20.94.235:8701 key (10)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="xkzhu@222.20.94.235:8701 key (2)">
         <serverdata>
           <mappings>
