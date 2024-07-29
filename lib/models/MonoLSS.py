@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
-
 from lib.backbones.resnet import resnet50
 from lib.backbones.dla import dla34
 from lib.backbones.dlaup import DLAUp

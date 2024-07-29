@@ -25,7 +25,8 @@ parser.add_argument('--config', type=str, default='lib/configs/dla34_bs16_lr0.00
 parser.add_argument("--exp", type=str, default=None)
 args = parser.parse_args()
 
-local_rank = int(os.environ["LOCAL_RANK"])
+local_rank = int(os.environ.get("LOCAL_RANK", -1))
+distributed = local_rank != -1
 
 
 def create_logger(log_file):
@@ -40,21 +41,25 @@ def create_logger(log_file):
 
 def main():
     print(f"Local rank: {local_rank}")
-    torch.cuda.set_device(local_rank)
-    dist.init_process_group(backend='nccl')
-    device = torch.device("cuda", local_rank)
+    if distributed:
+        torch.cuda.set_device(local_rank)
+        dist.init_process_group(backend='nccl')
+        device = torch.device("cuda", local_rank)
+    else:
+        device = torch.device("cuda")
 
     assert (os.path.exists(args.config))
     cfg = yaml.load(open(args.config, 'r'), Loader=yaml.Loader)
 
-    world_size = dist.get_world_size()
-    batch_size = cfg['dataset']['batch_size']
-    per_process_batch_size = batch_size // world_size
-    cfg['dataset']['batch_size'] = per_process_batch_size
+    if distributed:
+        world_size = dist.get_world_size()
+        batch_size = cfg['dataset']['batch_size']
+        per_process_batch_size = batch_size // world_size
+        cfg['dataset']['batch_size'] = per_process_batch_size
 
-    base_learning_rate = cfg['optimizer']['lr']
-    adjusted_learning_rate = base_learning_rate * (per_process_batch_size / batch_size)
-    cfg['optimizer']['lr'] = adjusted_learning_rate
+        base_learning_rate = cfg['optimizer']['lr']
+        adjusted_learning_rate = base_learning_rate * (per_process_batch_size / batch_size)
+        cfg['optimizer']['lr'] = adjusted_learning_rate
 
     os.makedirs(cfg['trainer']['log_dir'], exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -67,18 +72,19 @@ def main():
     logger = create_logger(log_file)
     import shutil
     if not args.evaluate:
-        if not args.test and local_rank == 0:
+        if not args.test and (not distributed or local_rank == 0):
             if os.path.exists(os.path.join(cfg['trainer']['log_dir'], 'lib/')):
                 shutil.rmtree(os.path.join(cfg['trainer']['log_dir'], 'lib/'))
-        if not args.test and local_rank == 0:
             shutil.copytree('./lib', os.path.join(cfg['trainer']['log_dir'], 'lib/'))
 
-    train_loader, val_loader, test_loader = build_dataloader(cfg['dataset'])
+    train_loader, val_loader, test_loader = build_dataloader(cfg['dataset'], distributed)
 
     model = build_model(cfg['model'], train_loader.dataset.cls_mean_size)
     model = model.to(device)
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank,
-                                                      find_unused_parameters=True)
+
+    if distributed:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank,
+                                                          find_unused_parameters=True)
 
     if args.evaluate:
         tester = Tester(cfg['tester'], cfg['dataset'], model, val_loader, logger)
@@ -101,11 +107,11 @@ def main():
                       lr_scheduler=lr_scheduler,
                       warmup_lr_scheduler=warmup_lr_scheduler,
                       logger=logger,
-                      local_rank=local_rank)
+                      local_rank=local_rank if distributed else None)
     try:
         trainer.train()
     except Exception as e:
-        if local_rank == 0:
+        if not distributed or local_rank == 0:
             logger.error(f"Error on rank {local_rank}: {e}")
         raise e
 

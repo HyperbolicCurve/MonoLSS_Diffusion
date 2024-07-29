@@ -1,6 +1,4 @@
-"""
-VPD dependencies
-"""
+
 from omegaconf import OmegaConf
 import torch as th
 import torch

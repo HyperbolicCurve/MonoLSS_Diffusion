@@ -22,7 +22,11 @@ class Trainer(object):
         self.logger = logger
         self.epoch = 0
         self.local_rank = local_rank
-        self.device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
+        self.distributed = local_rank is not None
+        if self.distributed:
+            self.device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.class_name = test_loader.dataset.class_name
         self.label_dir = cfg['dataset']['label_dir']
         self.eval_cls = cfg['dataset']['eval_cls']
@@ -33,21 +37,24 @@ class Trainer(object):
                                          map_location=self.device)
             self.lr_scheduler.last_epoch = self.epoch - 1
 
-        self.model = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=[local_rank],
-                                                               output_device=local_rank, find_unused_parameters=True)
+        if self.distributed:
+            self.model = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=[local_rank],
+                                                                   output_device=local_rank, find_unused_parameters=True)
+        else:
+            self.model = self.model.to(self.device)
 
     def train(self):
         start_epoch = self.epoch
         ei_loss = self.compute_e0_loss()
         loss_weightor = Hierarchical_Task_Learning(ei_loss)
 
-        if self.local_rank == 0:
+        if not self.distributed or self.local_rank == 0:
             print("Epochs: ", self.cfg_train['max_epoch'])
             print("Trained Parameters(M): ", sum(p.numel() for p in self.model.parameters() if p.requires_grad) / 1e6)
             print("Total Parameters(M): ", sum(p.numel() for p in self.model.parameters()) / 1e6)
 
         for epoch in tqdm(range(start_epoch, self.cfg_train['max_epoch']), desc="Training Epochs"):
-            if self.local_rank == 0:
+            if not self.distributed or self.local_rank == 0:
                 self.logger.info('------ TRAIN EPOCH %03d ------' % (epoch + 1))
                 if self.warmup_lr_scheduler is not None and epoch < 5:
                     self.logger.info('Learning Rate: %f' % self.warmup_lr_scheduler.get_lr()[0])
@@ -60,13 +67,13 @@ class Trainer(object):
             log_str = 'Weights: '
             for key in sorted(loss_weights.keys()):
                 log_str += ' %s:%.4f,' % (key[:-4], loss_weights[key])
-            if self.local_rank == 0:
+            if not self.distributed or self.local_rank == 0:
                 self.logger.info(log_str)
 
             try:
                 ei_loss = self.train_one_epoch(loss_weights)
             except Exception as e:
-                if self.local_rank == 0:
+                if not self.distributed or self.local_rank == 0:
                     self.logger.error(f"Error during training epoch {epoch + 1} on rank {self.local_rank}: {e}")
                 raise e
 
@@ -78,19 +85,19 @@ class Trainer(object):
                 self.lr_scheduler.step()
 
             if ((self.epoch % self.cfg_train['eval_frequency']) == 0 and self.epoch >= self.cfg_train['eval_start']):
-                if self.local_rank == 0:
+                if not self.distributed or self.local_rank == 0:
                     self.logger.info('------ EVAL EPOCH %03d ------' % self.epoch)
                 try:
                     Car_res = self.eval_one_epoch()
-                    if self.local_rank == 0:
+                    if not self.distributed or self.local_rank == 0:
                         self.logger.info(str(Car_res))
                 except Exception as e:
-                    if self.local_rank == 0:
+                    if not self.distributed or self.local_rank == 0:
                         self.logger.error(f"Error during evaluation epoch {self.epoch} on rank {self.local_rank}: {e}")
                     raise e
 
             if ((self.epoch % self.cfg_train['save_frequency']) == 0 and self.epoch >= self.cfg_train[
-                'eval_start'] and self.local_rank == 0):
+                'eval_start'] and (not self.distributed or self.local_rank == 0)):
                 os.makedirs(self.cfg_train['log_dir'] + '/checkpoints', exist_ok=True)
                 ckpt_name = os.path.join(self.cfg_train['log_dir'] + '/checkpoints', 'checkpoint_epoch_%d' % self.epoch)
                 save_checkpoint(get_checkpoint_state(self.model, self.optimizer, self.epoch), ckpt_name, self.logger)
@@ -133,7 +140,8 @@ class Trainer(object):
         disp_dict = {}
         stat_dict = {}
         for batch_idx, (inputs, calibs, coord_ranges, targets, info) in enumerate(self.train_loader):
-            self.train_loader.sampler.set_epoch(batch_idx)
+            if self.distributed:
+                self.train_loader.sampler.set_epoch(batch_idx)
             if type(inputs) != dict:
                 inputs = inputs.to(self.device)
             else:
@@ -173,7 +181,7 @@ class Trainer(object):
                 else:
                     disp_dict[key] += (loss_terms[key]).detach()
 
-            if trained_batch % self.cfg_train['disp_frequency'] == 0 and self.local_rank == 0:
+            if trained_batch % self.cfg_train['disp_frequency'] == 0 and (not self.distributed or self.local_rank == 0):
                 log_str = 'BATCH[%04d/%04d]' % (trained_batch, len(self.train_loader))
                 for key in sorted(disp_dict.keys()):
                     disp_dict[key] = disp_dict[key] / self.cfg_train['disp_frequency']
