@@ -6,11 +6,12 @@ from lib.losses.loss_function import LSS_Loss, Hierarchical_Task_Learning
 from lib.helpers.decode_helper import extract_dets_from_outputs, decode_detections
 from tqdm import tqdm
 from tools import eval
+from torch.cuda.amp import GradScaler, autocast
 
+scaler = GradScaler()
 
 class Trainer(object):
-    def __init__(self, cfg, model, optimizer, train_loader, test_loader, lr_scheduler, warmup_lr_scheduler, logger,
-                 local_rank):
+    def __init__(self, cfg, model, optimizer, train_loader, test_loader, lr_scheduler, warmup_lr_scheduler, logger, local_rank):
         self.cfg_train = cfg['trainer']
         self.cfg_test = cfg['tester']
         self.model = model
@@ -23,25 +24,19 @@ class Trainer(object):
         self.epoch = 0
         self.local_rank = local_rank
         self.distributed = local_rank is not None
-        if self.distributed:
-            self.device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() and self.distributed else "cuda" if torch.cuda.is_available() else "cpu")
         self.class_name = test_loader.dataset.class_name
         self.label_dir = cfg['dataset']['label_dir']
         self.eval_cls = cfg['dataset']['eval_cls']
 
         if self.cfg_train.get('resume_model', None):
             assert os.path.exists(self.cfg_train['resume_model'])
-            self.epoch = load_checkpoint(self.model, self.optimizer, self.cfg_train['resume_model'], self.logger,
-                                         map_location=self.device)
+            self.epoch = load_checkpoint(self.model, self.optimizer, self.cfg_train['resume_model'], self.logger, map_location=self.device)
             self.lr_scheduler.last_epoch = self.epoch - 1
 
+        self.model = self.model.to(self.device)
         if self.distributed:
-            self.model = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=[local_rank],
-                                                                   output_device=local_rank, find_unused_parameters=True)
-        else:
-            self.model = self.model.to(self.device)
+            self.model = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
 
     def train(self):
         start_epoch = self.epoch
@@ -96,8 +91,7 @@ class Trainer(object):
                         self.logger.error(f"Error during evaluation epoch {self.epoch} on rank {self.local_rank}: {e}")
                     raise e
 
-            if ((self.epoch % self.cfg_train['save_frequency']) == 0 and self.epoch >= self.cfg_train[
-                'eval_start'] and (not self.distributed or self.local_rank == 0)):
+            if ((self.epoch % self.cfg_train['save_frequency']) == 0 and self.epoch >= self.cfg_train['eval_start'] and (not self.distributed or self.local_rank == 0)):
                 os.makedirs(self.cfg_train['log_dir'] + '/checkpoints', exist_ok=True)
                 ckpt_name = os.path.join(self.cfg_train['log_dir'] + '/checkpoints', 'checkpoint_epoch_%d' % self.epoch)
                 save_checkpoint(get_checkpoint_state(self.model, self.optimizer, self.epoch), ckpt_name, self.logger)
@@ -110,14 +104,7 @@ class Trainer(object):
         progress_bar = tqdm(total=len(self.train_loader), leave=True, desc='pre-training loss stat')
         with torch.no_grad():
             for batch_idx, (inputs, calibs, coord_ranges, targets, info) in enumerate(self.train_loader):
-                if type(inputs) != dict:
-                    inputs = inputs.to(self.device)
-                else:
-                    for key in inputs.keys(): inputs[key] = inputs[key].to(self.device)
-                calibs = calibs.to(self.device)
-                coord_ranges = coord_ranges.to(self.device)
-                for key in targets.keys():
-                    targets[key] = targets[key].to(self.device)
+                inputs, calibs, coord_ranges, targets = self._move_to_device(inputs, calibs, coord_ranges, targets)
 
                 criterion = LSS_Loss(self.epoch)
                 outputs = self.model(inputs, coord_ranges, calibs, targets)
@@ -134,6 +121,10 @@ class Trainer(object):
                 disp_dict[key] /= trained_batch
         return disp_dict
 
+    from torch.cuda.amp import GradScaler, autocast
+
+    scaler = GradScaler()
+
     def train_one_epoch(self, loss_weights=None):
         self.model.train()
 
@@ -142,25 +133,25 @@ class Trainer(object):
         for batch_idx, (inputs, calibs, coord_ranges, targets, info) in enumerate(self.train_loader):
             if self.distributed:
                 self.train_loader.sampler.set_epoch(batch_idx)
-            if type(inputs) != dict:
-                inputs = inputs.to(self.device)
-            else:
-                for key in inputs.keys(): inputs[key] = inputs[key].to(self.device)
-            calibs = calibs.to(self.device)
-            coord_ranges = coord_ranges.to(self.device)
-            for key in targets.keys(): targets[key] = targets[key].to(self.device)
+            inputs, calibs, coord_ranges, targets = self._move_to_device(inputs, calibs, coord_ranges, targets)
 
             self.optimizer.zero_grad()
-            criterion = LSS_Loss(self.epoch)
-            outputs = self.model(inputs, coord_ranges, calibs, targets)
-            total_loss, loss_terms = criterion(outputs, targets)
 
-            if loss_weights is not None:
-                total_loss = torch.zeros(1).cuda()
-                for key in loss_weights.keys():
-                    total_loss += loss_weights[key].detach() * loss_terms[key]
-            total_loss.backward()
-            self.optimizer.step()
+            with autocast():  # 混合精度训练
+                criterion = LSS_Loss(self.epoch)
+                outputs = self.model(inputs, coord_ranges, calibs, targets)
+                total_loss, loss_terms = criterion(outputs, targets)
+
+                if loss_weights is not None:
+                    total_loss = torch.zeros(1, device=self.device)
+                    for key in loss_weights.keys():
+                        total_loss += loss_weights[key].detach() * loss_terms[key]
+
+            scaler.scale(total_loss).backward()
+            scaler.step(self.optimizer)
+            scaler.update()
+
+            torch.cuda.empty_cache()  # 清理缓存
 
             trained_batch = batch_idx + 1
 
@@ -202,12 +193,7 @@ class Trainer(object):
         progress_bar = tqdm(total=len(self.test_loader), leave=True, desc='Evaluation Progress')
         with torch.no_grad():
             for batch_idx, (inputs, calibs, coord_ranges, _, info) in enumerate(self.test_loader):
-                if type(inputs) != dict:
-                    inputs = inputs.to(self.device)
-                else:
-                    for key in inputs.keys(): inputs[key] = inputs[key].to(self.device)
-                calibs = calibs.to(self.device)
-                coord_ranges = coord_ranges.to(self.device)
+                inputs, calibs, coord_ranges = self._move_to_device(inputs, calibs, coord_ranges)
 
                 outputs = self.model(inputs, coord_ranges, calibs, K=50, mode='val')
 
@@ -217,8 +203,7 @@ class Trainer(object):
                 calibs = [self.test_loader.dataset.get_calib(index) for index in info['img_id']]
                 info = {key: val.detach().cpu().numpy() for key, val in info.items()}
                 cls_mean_size = self.test_loader.dataset.cls_mean_size
-                dets = decode_detections(dets=dets, info=info, calibs=calibs, cls_mean_size=cls_mean_size,
-                                         threshold=self.cfg_test['threshold'])
+                dets = decode_detections(dets=dets, info=info, calibs=calibs, cls_mean_size=cls_mean_size, threshold=self.cfg_test['threshold'])
                 results.update(dets)
                 progress_bar.update()
             progress_bar.close()
@@ -240,3 +225,17 @@ class Trainer(object):
                     for j in range(1, len(results[img_id][i])):
                         f.write(' {:.2f}'.format(results[img_id][i][j]))
                     f.write('\n')
+
+    def _move_to_device(self, inputs, calibs, coord_ranges, targets=None):
+        """
+        Move inputs, calibs, coord_ranges, and targets to the correct device.
+        """
+        if type(inputs) != dict:
+            inputs = inputs.to(self.device)
+        else:
+            for key in inputs.keys(): inputs[key] = inputs[key].to(self.device)
+        calibs = calibs.to(self.device)
+        coord_ranges = coord_ranges.to(self.device)
+        if targets:
+            for key in targets.keys(): targets[key] = targets[key].to(self.device)
+        return inputs, calibs, coord_ranges, targets

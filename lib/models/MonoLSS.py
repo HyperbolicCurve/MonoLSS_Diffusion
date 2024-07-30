@@ -53,7 +53,7 @@ class MonoLSS(nn.Module):
             scales = [2 ** i for i in range(len(channels[self.first_level:]))]
             self.feat_up = globals()[neck](channels[self.first_level:], scales_list=scales)
         elif backbone == 'sdv3':
-            self.backbone = SDV3Encoder(class_embedding_path=config['class_embedding_path'],
+            self.backbone = SDV3Encoder(class_embedding_path=config['class_embeddings_path'],
                                         pooled_projection_path=config['pooled_projection_path'])
             self.fpn = FeatureFusion(in_channels=16)
 
