@@ -28,7 +28,6 @@ args = parser.parse_args()
 local_rank = int(os.environ.get("LOCAL_RANK", -1))
 distributed = local_rank != -1
 
-
 def create_logger(log_file):
     log_format = '%(asctime)s  %(levelname)5s  %(message)s'
     logging.basicConfig(level=logging.INFO, format=log_format, filename=log_file)

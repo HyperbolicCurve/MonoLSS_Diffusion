@@ -42,7 +42,10 @@ class MonoLSS(nn.Module):
                                        class_embeddings_path=config['class_embeddings_path'],
                                        sd_config_path=config['sd_config_path'],
                                        sd_checkpoint_path=config['sd_checkpoint_path'],
-                                       use_attn=False)
+                                       use_attn=False,
+                                       use_lora=config['use_lora'],
+                                       rank=config['rank'],
+                                       lora_dropout=config['lora_dropout'])
             self.fpn = FeatureFusion()
         elif backbone == 'dla34':
             neck = config['neck']

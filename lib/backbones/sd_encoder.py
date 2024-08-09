@@ -9,9 +9,8 @@ from einops import rearrange, repeat
 from timm.models.layers import trunc_normal_
 from inspect import isfunction
 import torch.nn.functional as F
-from ldm.util import instantiate_from_config
 from typing import Dict, List
-
+from peft import LoraConfig, get_peft_model
 
 def exists(val):
     return val is not None
@@ -26,6 +25,21 @@ def default(val, d):
         return val
     return d() if isfunction(d) else d
 
+def instantiate_from_config(config):
+    if not "target" in config:
+        if config == '__is_first_stage__':
+            return None
+        elif config == "__is_unconditional__":
+            return None
+        raise KeyError("Expected key `target` to instantiate.")
+    return get_obj_from_str(config["target"])(**config.get("params", dict()))
+
+def get_obj_from_str(string, reload=False):
+    module, cls = string.rsplit(".", 1)
+    if reload:
+        module_imp = importlib.import_module(module)
+        importlib.reload(module_imp)
+    return getattr(importlib.import_module(module, package=None), cls)
 
 class VPDEncoder(nn.Module):
     def __init__(self,
@@ -37,7 +51,10 @@ class VPDEncoder(nn.Module):
                  class_embeddings_path=None,
                  sd_config_path=None,
                  sd_checkpoint_path=None,
-                 use_attn=False):
+                 use_attn=False,
+                 use_lora=False,
+                 rank=8,
+                 lora_dropout=0.1):
         super().__init__()
         if return_interm_layers:
             if use_attn == False:
@@ -66,6 +83,10 @@ class VPDEncoder(nn.Module):
             nn.GroupNorm(16, out_dim),
             nn.ReLU(),
         )
+        torch._inductor.config.conv_1x1_as_mm = True
+        torch._inductor.config.coordinate_descent_tuning = True
+        torch._inductor.config.epilogue_fusion = False
+        torch._inductor.config.coordinate_descent_check_all_directions = True
 
         self.apply(self._init_weights)
         config = OmegaConf.load(sd_config_path)
@@ -73,8 +94,9 @@ class VPDEncoder(nn.Module):
 
         sd_model = instantiate_from_config(config.model)
         self.encoder_vq = sd_model.first_stage_model
-        self.unet = UNetWrapper(sd_model.model, use_attn=use_attn)
-
+        self.encoder_vq.requires_grad_(False)
+        unet = UNetWrapper(sd_model.model, use_attn=use_attn)
+        self.unet = torch.compile(unet.to(memory_format=torch.channels_last), mode="reduce-overhead", fullgraph=True)
         del sd_model.cond_stage_model
         del self.encoder_vq.decoder
         del self.unet.unet.diffusion_model.out
@@ -86,6 +108,16 @@ class VPDEncoder(nn.Module):
         self.class_embeddings = torch.load(class_embeddings_path)
         self.gamma = nn.Parameter(torch.ones(text_dim) * 1e-4)
 
+        if use_lora:
+            self.unet.requires_grad_(False)
+            unet_lora_config = LoraConfig(
+                r=rank,
+                lora_alpha=rank,
+                init_lora_weights="gaussian",
+                target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+                lora_dropout=lora_dropout
+            )
+            self.unet.unet.add_adapter(unet_lora_config)
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.Linear)):
             trunc_normal_(m.weight, std=.02)
